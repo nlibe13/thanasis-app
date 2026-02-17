@@ -3,8 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thanasis Multiplayer</title>
-  <!-- Firebase App (the core Firebase SDK) -->
+  <title>Θανάσης Multiplayer</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    input, button { padding: 10px; margin: 5px; font-size: 16px; }
+    #players { margin-top: 20px; }
+    .player { margin: 5px 0; }
+  </style>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
@@ -12,8 +17,10 @@
   <h1>Θανάσης Multiplayer</h1>
   <div>
     <input type="text" id="roomCode" placeholder="Enter Room Code">
+    <input type="text" id="playerName" placeholder="Your Name">
     <button onclick="joinRoom()">Join Room</button>
   </div>
+  <div id="players"></div>
 
   <script>
     // Firebase configuration
@@ -28,21 +35,28 @@
       measurementId: "G-CFG6HNFKSQ"
     };
 
-    // Initialize Firebase
     const app = firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    let roomRef, playerKey;
 
     function joinRoom() {
-      const code = document.getElementById("roomCode").value;
-      if(!code) { alert("Enter a room code"); return; }
-      const roomRef = db.ref('rooms/' + code);
-      roomRef.once('value').then(snapshot => {
-        if(snapshot.exists()) {
-          alert("Joined room: " + code);
-        } else {
-          alert("Room not found, creating new one.");
-          roomRef.set({ createdAt: Date.now() });
-        }
+      const code = document.getElementById("roomCode").value.trim();
+      const name = document.getElementById("playerName").value.trim();
+      if (!code || !name) { alert("Enter room code and name"); return; }
+
+      roomRef = db.ref('rooms/' + code + '/players');
+      playerKey = roomRef.push().key;
+      roomRef.child(playerKey).set({ name: name });
+
+      roomRef.on('value', snapshot => {
+        const playersDiv = document.getElementById("players");
+        playersDiv.innerHTML = "<h3>Players in Room:</h3>";
+        snapshot.forEach(child => {
+          const p = document.createElement("div");
+          p.className = "player";
+          p.textContent = child.val().name;
+          playersDiv.appendChild(p);
+        });
       });
     }
   </script>

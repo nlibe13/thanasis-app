@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Θανάσης Multiplayer</title>
+<style>
+body { font-family: Arial; background:#0b5e2a; color:white; text-align:center; }
+.card { display:inline-block; padding:10px; margin:5px; background:white; color:black; border-radius:8px; cursor:pointer; }
+button { padding:10px 20px; margin:10px; border:none; border-radius:8px; cursor:pointer; }
+#players { margin-top:20px; }
+</style>
+</head>
+<body>
+
+<h2>Θανάσης Multiplayer (4 Players)</h2>
+<div id="roomArea">
+  <input type="text" id="roomCode" placeholder="Κωδικός Room">
+  <button onclick="createRoom()">Δημιουργία Room</button>
+  <button onclick="joinRoom()">Join Room</button>
+</div>
+
+<div id="gameArea" style="display:none;">
+  <h3>Room: <span id="roomDisplay"></span></h3>
+  <div id="status"></div>
+  <h3>Το Χέρι Σου</h3>
+  <div id="playerHand"></div>
+  <button onclick="drawCard()">Τράβα Φύλλο</button>
+
+  <div id="players"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+// ====== Βάλε το δικό σου Firebase URL εδώ ======
+const firebaseConfig = {
+  databaseURL: databaseURL: "https://thanasisgame-default-rtdb.europe-west1.firebasedatabase.app/"
+
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ====== Μεταβλητές παιχνιδιού ======
+let deck = [];
+let playerHand = [];
+let playerId = Math.random().toString(36).substr(2,5);
+let room = "";
+let players = {};
+
+// ====== Τράπουλα ======
+const suits = ["♠","♥","♦","♣"];
+const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+
+function createDeck(){
+  deck = [];
+  for(let s of suits){
+    for(let v of values){
+      deck.push(v+s);
+    }
+  }
+  deck.sort(()=>Math.random()-0.5);
+}
+
+// ====== Room ======
+function createRoom(){
+  room = document.getElementById("roomCode").value || Math.random().toString(36).substr(2,5).toUpperCase();
+  db.ref('rooms/'+room+'/players/'+playerId).set({hand:[], ready:false});
+  document.getElementById("roomDisplay").innerText = room;
+  document.getElementById("roomArea").style.display="none";
+  document.getElementById("gameArea").style.display="block";
+  initGame();
+}
+
+function joinRoom(){
+  room = document.getElementById("roomCode").value;
+  if(!room) return alert("Βάλε Room Code");
+  db.ref('rooms/'+room+'/players/'+playerId).set({hand:[], ready:false});
+  document.getElementById("roomDisplay").innerText = room;
+  document.getElementById("roomArea").style.display="none";
+  document.getElementById("gameArea").style.display="block";
+  initGame();
+}
+
+// ====== Init Game ======
+function initGame(){
+  createDeck();
+  playerHand = deck.splice(0,10);
+  updateHand();
+  db.ref('rooms/'+room+'/players/'+playerId+'/hand').set(playerHand);
+  listenPlayers();
+}
+
+// ====== Ενημέρωση χειρός ======
+function updateHand(){
+  const handDiv = document.getElementById("playerHand");
+  handDiv.innerHTML="";
+  playerHand.forEach((card,index)=>{
+    let c = document.createElement("div");
+    c.className="card";
+    c.innerText=card;
+    c.onclick = ()=>discardCard(index);
+    handDiv.appendChild(c);
+  });
+}
+
+// ====== Τραβήξιμο φύλλου ======
+function drawCard(){
+  if(deck.length>0){
+    let card = deck.pop();
+    playerHand.push(card);
+    updateHand();
+    db.ref('rooms/'+room+'/players/'+playerId+'/hand').set(playerHand);
+    checkWin();
+  }
+}
+
+// ====== Πετάς φύλλο ======
+function discardCard(index){
+  playerHand.splice(index,1);
+  updateHand();
+  db.ref('rooms/'+room+'/players/'+playerId+'/hand').set(playerHand);
+  checkWin();
+}
+
+// ====== Έλεγχος νικητή ======
+function checkWin(){
+  if(hasThreeOfKind(playerHand) || hasStraight(playerHand)){
+    db.ref('rooms/'+room+'/winner').set(playerId);
+    alert("Νίκησες!");
+  }
+}
+
+// ====== Ελέγχει τριάδα ======
+function hasThreeOfKind(hand){
+  let counts = {};
+  for(let card of hand){
+    let value = card.slice(0,-1);
+    counts[value]=(counts[value]||0)+1;
+    if(counts[value]>=3) return true;
+  }
+  return false;
+}
+
+// ====== Ελέγχει σειρά ======
+function hasStraight(hand){
+  let nums = hand.map(c=>{
+    let v = card.slice(0,-1);
+    if(v==="A") return 1;
+    if(v==="J") return 11;
+    if(v==="Q") return 12;
+    if(v==="K") return 13;
+    return parseInt(v);
+  }).sort((a,b)=>a-b);
+  let count=1;
+  for(let i=1;i<nums.length;i++){
+    if(nums[i]===nums[i-1]+1){
+      count++;
+      if(count>=3) return true;
+    } else {
+      count=1;
+    }
+  }
+  return false;
+}
+
+// ====== Ακρόαση άλλων παικτών ======
+function listenPlayers(){
+  db.ref('rooms/'+room+'/players').on('value', snapshot=>{
+    players = snapshot.val();
+    const div = document.getElementById("players");
+    div.innerHTML="";
+    for(let pid in players){
+      div.innerHTML+= `<div>${pid}${pid===playerId?" (ΕΣΥ)":" "}: ${players[pid].hand.length} φύλλα</div>`;
+    }
+  });
+}
+
+</script>
+</body>
+</html>
